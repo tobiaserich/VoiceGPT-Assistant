@@ -138,7 +138,7 @@ class ChatApp(tk.Tk):
             self.insert_message(user_input, "Sie", tk.RIGHT)
 
             self.messages.append({'role': 'user', 'content': user_input})
-            response = chat_gpt_request(api_key, self.messages, self.max_tokens_var.get(), self.n_var.get())
+            response = chat_gpt_request(api_key,[{'role': 'user', 'content': user_input}], self.max_tokens_var.get(), self.n_var.get())
             self.messages.append({'role': 'assistant', 'content': response})
 
             self.insert_message(response, "ChatGPT", tk.LEFT)
