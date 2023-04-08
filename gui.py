@@ -1,150 +1,162 @@
+import openai
+import pyttsx3
+import speech_recognition as sr
+import os
+import json
 import tkinter as tk
 from tkinter import ttk
-from tkinter.scrolledtext import ScrolledText
-import openai
-import speech_recognition as sr
-import pyttsx3
+from tkinter import scrolledtext
 
-model_name = "gpt-3.5-turbo"
-conversation_history = []
-# Initialize Text-to-Speech engine
-engine = pyttsx3.init()
+# Text-to-Speech-Funktion
+def text_to_speech(text):
+    engine = pyttsx3.init()
+    engine.say(text)
+    engine.runAndWait()
 
-# Speech recognition function
-def recognize_speech():
+# Speech-to-Text-Funktion
+def speech_to_text():
     recognizer = sr.Recognizer()
     with sr.Microphone() as source:
-        print("Speak now:")
+        print("Sprechen Sie Ihren Text:")
         audio = recognizer.listen(source)
+        try:
+            text = recognizer.recognize_google(audio, language="de-DE")
+            return text
+        except:
+            return "Entschuldigung, ich konnte Sie nicht verstehen."
 
-    try:
-        recognized_text = recognizer.recognize_google(audio, language="de-DE")
-        print("You said:", recognized_text)
-        return recognized_text
-    except Exception as e:
-        print("Sorry, I couldn't understand you.")
-        return None
+# API-Authentifizierung und API-Key-Speicherung
+def authenticate_api_key(api_key):
+    openai.api_key = api_key
+    with open("api_key.json", "w") as f:
+        json.dump({"api_key": api_key}, f)
 
-# GPT-3 response function
-def get_gpt3_response(messages):
-    print(conversation_history)
+# API-Key abrufen
+def get_api_key():
+    if os.path.exists("api_key.json"):
+        with open("api_key.json", "r") as f:
+            api_key = json.load(f)["api_key"]
+            return api_key
+    else:
+        api_key = input("Bitte geben Sie Ihren OpenAI API-Key ein: ")
+        authenticate_api_key(api_key)
+        return api_key
+
+# OpenAI ChatGPT API Anfrage
+def chat_gpt_request(api_key, messages,max_tokens, n):
+    openai.api_key = api_key
+
     response = openai.ChatCompletion.create(
-        model=model_name,
+        model="gpt-3.5-turbo",
         messages=messages,
-        max_tokens=500,
-        n=1,
+        max_tokens=max_tokens,
+        n=n,
         stop=None,
         temperature=0.5,
     )
 
     return response.choices[0].message['content'].strip()
 
-class Message(tk.Frame):
-    def __init__(self, master, role, content, tts_engine, *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
-        self.role = role
-        self.content = content
-        self.tts_engine = tts_engine
+class ChatApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
 
-        if self.role == "user":
-            self.label = tk.Label(self, text=self.content, wraplength=400, anchor=tk.E, justify=tk.RIGHT, bg="#DDF9C1", padx=10, pady=5)
-            self.label.pack(fill=tk.X, padx=(100, 5), pady=(5, 0))
-        else:
-            self.label = tk.Label(self, text=self.content, wraplength=400, anchor=tk.W, justify=tk.LEFT, bg="#B9E6FF", padx=10, pady=5)
-            self.label.pack(fill=tk.X, padx=(5, 100), pady=(5, 0))
+        self.title("ChatGPT App")
+        self.geometry("400x600")
+        self.configure(bg="#ECE5DD")
 
-        self.speak_button = ttk.Button(self, text="🔊", command=self.read_aloud_message, width=3)
-        self.speak_button.pack(side=tk.RIGHT, padx=5)
+        self.create_widgets()
+        self.messages = [{'role': 'system', 'content': 'Sie sind jetzt mit ChatGPT verbunden.'}]
 
-    def read_aloud_message(self):
-        self.tts_engine.stop()
-        self.tts_engine.say(self.content)
-        self.tts_engine.runAndWait()
-def set_api_key():
-    global openai
-    openai.api_key = api_key_input.get()
-    global model_name
-    model_name = "gpt-3.5-turbo"
+    def create_widgets(self):
+        self.message_frame = tk.Frame(self, bg="#ECE5DD")
+        self.message_frame.place(relwidth=1, relheight=0.7)
 
-def process_input(text, tts_engine):
-    if text:
-        conversation_frame = tab_control.children[tab_control.select().split('.')[2]]
-        if "conversation_text" not in conversation_frame.children:
-            conversation_text = ScrolledText(conversation_frame, wrap=tk.WORD, name="conversation_text")
-            conversation_text.pack(fill=tk.BOTH, expand=True)
-            conversation_frame.children["conversation_text"] = conversation_text
-        else:
-            conversation_text = conversation_frame.nametowidget("conversation_text")
+        self.scrollbar = ttk.Scrollbar(self.message_frame, orient="vertical")
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # User message
-        user_message = {"role": "user", "content": text}
-        conversation_history.append(user_message)
-        Message(conversation_text, "user", text, tts_engine).pack(side=tk.TOP, fill=tk.X)
-        user_input.delete(0, tk.END)
+        self.message_area = tk.Text(self.message_frame, wrap=tk.WORD, yscrollcommand=self.scrollbar.set, bg="#ECE5DD", state=tk.DISABLED, font=("Helvetica", 12))
+        self.message_area.pack(fill=tk.BOTH, expand=True)
+        self.scrollbar.config(command=self.message_area.yview)
 
-        # GPT-3 message
-        gpt3_response = get_gpt3_response(conversation_history)
-        gpt3_message = {"role": "assistant", "text": gpt3_response}
-        conversation_history.append(gpt3_message)
-        Message(conversation_text, "gpt3", gpt3_response, tts_engine).pack(side=tk.TOP, fill=tk.X)
+        self.entry_var = tk.StringVar()
+        self.entry_box = ttk.Entry(self, textvariable=self.entry_var, width=30)
+        self.entry_box.place(relx=0.05, rely=0.75)
 
-        conversation_text.yview(tk.END)
+        self.send_button = ttk.Button(self, text="Senden", command=self.send_message)
+        self.send_button.place(relx=0.7, rely=0.75)
+
+        self.record_button = ttk.Button(self, text="Spracheingabe", command=self.speech_input)
+        self.record_button.place(relx=0.8, rely=0.75)
+
+        self.max_tokens_label = ttk.Label(self, text="Max. Tokens:")
+        self.max_tokens_label.place(relx=0.05, rely=0.85)
+        self.max_tokens_var = tk.IntVar(value=100)
+        self.max_tokens_scale = tk.Scale(self, from_=0, to=4000, variable=self.max_tokens_var, orient=tk.HORIZONTAL, length=200, resolution=10)
+        self.max_tokens_scale.place(relx=0.25, rely=0.85)
+
+        self.n_label = ttk.Label(self, text="n:")
+        self.n_label.place(relx=0.05, rely=0.95)
+        self.n_var = tk.IntVar(value=1)
+        self.n_scale = tk.Scale(self, from_=1, to=10, variable=self.n_var, orient=tk.HORIZONTAL, length=200, resolution=1)
+        self.n_scale.place(relx=0.25, rely=0.95)
 
 
-def speech_to_text():
-    recognized_text = recognize_speech()
-    if recognized_text:
-        user_input.delete(0, tk.END)
-        user_input.insert(tk.END, recognized_text)
-        process_input(recognized_text)
+    def insert_message(self, text, user, side):
+        self.message_area.configure(state='normal')
+        color = "#34B7F1" if user == "Sie" else "#DCF8C6"
+        wrap_length = 250 if side == tk.LEFT else 150
+        self.message_area.tag_config(side, justify=side, background=color, lmargin1=10, lmargin2=10, spacing3=5)
+        self.message_area.tag_config("code", font=("Courier", 12), background="#F0F0F0")
+
+        self.message_area.insert(tk.END, f"{user}: ", side)
+    
+        # Code-Snippet-Erkennung und präformatierte Anzeige
+        start = 0
+        in_code_block = False
+        for part in text.split("`"):
+            if in_code_block:
+                self.message_area.insert(tk.END, part, ("code", side))
+            else:
+                self.message_area.insert(tk.END, part, side)
+            in_code_block = not in_code_block
+
+        self.message_area.insert(tk.END, "\n", side)
+        self.message_area.window_create(tk.END, window=self.create_play_button(text))
+        self.message_area.insert(tk.END, "\n", side)
+        self.message_area.configure(state='disabled')
 
 
-def add_tab():
-    tab_name = f"Tab {len(tabs) + 1}"
-    new_tab = ttk.Frame(tab_control)
-    tab_control.add(new_tab, text=tab_name)
+    def create_play_button(self, text):
+        button = ttk.Button(self.message_area, text="▶", command=lambda: text_to_speech(text))
+        return button
 
-    new_conversation_text = ScrolledText(new_tab, wrap=tk.WORD, name="conversation_text")
-    new_conversation_text.pack(fill=tk.BOTH, expand=True)
-    new_conversation_text.config(state=tk.DISABLED)
+    def send_message(self):
+        user_input = self.entry_var.get()
 
-    tabs[tab_name] = {
-        "conversation_text": new_conversation_text,
-        "conversation_history": [],
-    }
+        if user_input:
+            self.insert_message(user_input, "Sie", tk.RIGHT)
 
-# Create main window
-root = tk.Tk()
-root.title("Voice GPT")
-root.geometry("400x600")
-tab_control = ttk.Notebook(root)
-tab_control.pack(fill=tk.BOTH, expand=True)
+            self.messages.append({'role': 'user', 'content': user_input})
+            response = chat_gpt_request(api_key, self.messages, self.max_tokens_var.get(), self.n_var.get())
+            self.messages.append({'role': 'assistant', 'content': response})
 
-tabs = {}
-add_tab()
+            self.insert_message(response, "ChatGPT", tk.LEFT)
 
-add_tab_button = ttk.Button(root, text="+", command=add_tab)
-add_tab_button.pack(side=tk.RIGHT)
+        self.entry_var.set("")
+        
+    def speech_input(self):
+        user_input = speech_to_text()
 
-api_key_label = ttk.Label(root, text="API Key:")
-api_key_label.pack(side=tk.LEFT, padx=(5, 0))
+        self.insert_message(user_input, "Sie", tk.RIGHT)
 
-api_key_input = ttk.Entry(root)
-api_key_input.pack(side=tk.LEFT, padx=(0, 5))
+        self.messages.append({'role': 'user', 'content': user_input})
+        response = chat_gpt_request(api_key, self.messages, self.max_tokens_var.get(), self.n_var.get())
+        self.messages.append({'role': 'assistant', 'content': response})
 
-user_input = ttk.Entry(root)
-user_input.pack(side=tk.LEFT, fill=tk.X, expand=True)
-api_key_button = ttk.Button(root, text="Set API Key", command=set_api_key)
-api_key_button.pack(side=tk.LEFT, padx=(0,10))
+        self.insert_message(response, "ChatGPT", tk.LEFT)
 
-
-user_input.bind("<Return>", lambda event: process_input(user_input.get()))
-
-send_button = ttk.Button(root, text="Send", command=lambda: process_input(user_input.get(), engine))
-
-send_button.pack(side=tk.RIGHT, padx=(0, 5))
-
-talk_button = ttk.Button(root, text="Talk", command=speech_to_text)
-talk_button.pack(side=tk.RIGHT)
-
-root.mainloop()
+if __name__ == "__main__":
+    api_key = get_api_key()
+    app = ChatApp()
+    app.mainloop()
